@@ -35,6 +35,7 @@ export const ChatDetailModal: React.FC<ChatDetailModalProps> = ({
   const [messages, setMessages] = useState<RecoveredMessage[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
 
+  // Exact matching safe top padding ensuring battery / time / wifi status bar doesn't overlap
   const safeTopPadding = Math.max(
     insets.top,
     Platform.OS === 'android' ? (StatusBar.currentHeight || 28) : 20
@@ -103,61 +104,64 @@ export const ChatDetailModal: React.FC<ChatDetailModalProps> = ({
       visible={visible}
       animationType="slide"
       onRequestClose={onClose}
-      presentationStyle="fullScreen"
+      statusBarTranslucent={true}
     >
-      <SafeAreaView style={styles.safeArea}>
-        <StatusBar backgroundColor="#075E54" barStyle="light-content" />
+      <View style={styles.safeArea}>
+        <StatusBar backgroundColor="#075E54" barStyle="light-content" translucent={true} />
 
-        {/* WhatsApp Chat Room Top Header */}
-        <View style={[styles.header, { paddingTop: safeTopPadding + 6 }]}>
-          <TouchableOpacity
-            activeOpacity={0.7}
-            onPress={onClose}
-            style={styles.backButton}
-          >
-            <Icon name="arrow_back" size={24} color="#FFFFFF" />
-          </TouchableOpacity>
-
-          {/* Contact Avatar & Info */}
-          <View style={styles.headerInfo}>
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>
-                {chat.senderName.charAt(0).toUpperCase()}
-              </Text>
-            </View>
-            <View style={styles.titleColumn}>
-              <Text style={styles.senderTitle} numberOfLines={1}>
-                {chat.senderName}
-              </Text>
-              <Text style={styles.senderSubtitle}>
-                {isBusiness ? 'WhatsApp Business' : 'WhatsApp'} • {messages.length} messages
-              </Text>
-            </View>
-          </View>
-
-          {/* Top Actions: WhatsApp App Link & Delete */}
-          <View style={styles.headerActions}>
+        {/* WhatsApp Chat Room Top Header with safe status bar padding */}
+        <View style={[styles.headerContainer, { paddingTop: safeTopPadding + 8 }]}>
+          <View style={styles.topBarRow}>
             <TouchableOpacity
               activeOpacity={0.7}
-              onPress={handleOpenInWhatsApp}
-              style={styles.headerIconButton}
-              accessibilityLabel="Open in WhatsApp"
+              onPress={onClose}
+              style={styles.backButton}
+              accessibilityLabel="Back"
             >
-              <Icon
-                name={isBusiness ? 'business' : 'whatsapp'}
-                size={22}
-                color="#FFFFFF"
-              />
+              <Icon name="arrow_back" size={24} color="#FFFFFF" />
             </TouchableOpacity>
 
-            <TouchableOpacity
-              activeOpacity={0.7}
-              onPress={handleDeleteConfirm}
-              style={styles.headerIconButton}
-              accessibilityLabel="Delete Conversation"
-            >
-              <Icon name="delete" size={22} color="#FFFFFF" />
-            </TouchableOpacity>
+            {/* Contact Avatar & Info */}
+            <View style={styles.headerInfo}>
+              <View style={styles.avatar}>
+                <Text style={styles.avatarText}>
+                  {chat.senderName.charAt(0).toUpperCase()}
+                </Text>
+              </View>
+              <View style={styles.titleColumn}>
+                <Text style={styles.senderTitle} numberOfLines={1}>
+                  {chat.senderName}
+                </Text>
+                <Text style={styles.senderSubtitle}>
+                  {isBusiness ? 'WhatsApp Business' : 'WhatsApp'} • {messages.length} messages
+                </Text>
+              </View>
+            </View>
+
+            {/* Top Actions: WhatsApp App Link & Delete */}
+            <View style={styles.headerActions}>
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={handleOpenInWhatsApp}
+                style={styles.headerIconButton}
+                accessibilityLabel="Open in WhatsApp"
+              >
+                <Icon
+                  name={isBusiness ? 'business' : 'whatsapp'}
+                  size={22}
+                  color="#FFFFFF"
+                />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={handleDeleteConfirm}
+                style={styles.headerIconButton}
+                accessibilityLabel="Delete Conversation"
+              >
+                <Icon name="delete" size={22} color="#FFFFFF" />
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
 
@@ -214,7 +218,7 @@ export const ChatDetailModal: React.FC<ChatDetailModalProps> = ({
             }}
           />
         </View>
-      </SafeAreaView>
+      </View>
     </Modal>
   );
 };
@@ -224,14 +228,16 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#075E54',
   },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  headerContainer: {
     backgroundColor: '#075E54',
-    paddingHorizontal: 8,
-    paddingVertical: 10,
+    paddingHorizontal: 12,
+    paddingBottom: 10,
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(0, 0, 0, 0.1)',
+  },
+  topBarRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   backButton: {
     padding: 6,
