@@ -312,6 +312,78 @@ class StatusScannerModule(private val reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
+    fun shareMultipleFiles(filePaths: ReadableArray, promise: Promise) {
+        try {
+            if (filePaths.size() == 0) {
+                promise.resolve(false)
+                return
+            }
+
+            val uriList = ArrayList<Uri>()
+            var hasImage = false
+            var hasVideo = false
+
+            for (i in 0 until filePaths.size()) {
+                val path = filePaths.getString(i) ?: continue
+                val cleanPath = path.replace("file://", "")
+                val file = File(cleanPath)
+                if (file.exists()) {
+                    val uri = FileProvider.getUriForFile(
+                        reactContext,
+                        "${reactContext.packageName}.fileprovider",
+                        file
+                    )
+                    uriList.add(uri)
+
+                    val isVideo = file.name.endsWith(".mp4", ignoreCase = true) ||
+                                  file.name.endsWith(".3gp", ignoreCase = true) ||
+                                  file.name.endsWith(".mkv", ignoreCase = true)
+                    if (isVideo) {
+                        hasVideo = true
+                    } else {
+                        hasImage = true
+                    }
+                }
+            }
+
+            if (uriList.isEmpty()) {
+                promise.reject("FILES_NOT_FOUND", "No valid files found to share")
+                return
+            }
+
+            val mimeType = when {
+                hasImage && hasVideo -> "*/*"
+                hasVideo -> "video/*"
+                else -> "image/*"
+            }
+
+            val shareIntent = if (uriList.size == 1) {
+                Intent(Intent.ACTION_SEND).apply {
+                    type = mimeType
+                    putExtra(Intent.EXTRA_STREAM, uriList[0])
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+            } else {
+                Intent(Intent.ACTION_SEND_MULTIPLE).apply {
+                    type = mimeType
+                    putParcelableArrayListExtra(Intent.EXTRA_STREAM, uriList)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+            }
+
+            val chooser = Intent.createChooser(shareIntent, "Share Statuses (${uriList.size}) via").apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            reactContext.startActivity(chooser)
+            promise.resolve(true)
+        } catch (e: Exception) {
+            promise.reject("SHARE_MULTIPLE_ERROR", e.message, e)
+        }
+    }
+
+    @ReactMethod
     fun repostToWhatsApp(filePath: String, isBusiness: Boolean, promise: Promise) {
         try {
             val cleanPath = filePath.replace("file://", "")

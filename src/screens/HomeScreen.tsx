@@ -232,7 +232,8 @@ export const HomeScreen: React.FC = () => {
 
   // Batch Save Selected
   const handleBatchSave = async () => {
-    const toSave = allMedia.filter((m) => selectedIds.has(m.id));
+    const sourceList = activeTab === 'saved' ? savedMedia : allMedia;
+    const toSave = sourceList.filter((m) => selectedIds.has(m.id));
     let savedCount = 0;
     for (const item of toSave) {
       const ok = await StatusScannerService.saveMedia({
@@ -255,10 +256,15 @@ export const HomeScreen: React.FC = () => {
 
   // Batch Share Selected
   const handleBatchShare = async () => {
-    const toShare = allMedia.filter((m) => selectedIds.has(m.id));
+    const sourceList = activeTab === 'saved' ? savedMedia : allMedia;
+    const toShare = sourceList.filter((m) => selectedIds.has(m.id));
     if (toShare.length > 0) {
-      showToast('Opening Share Sheet...', undefined, 'info');
-      await StatusScannerService.shareMedia(toShare[0]);
+      showToast(
+        'Opening Share Sheet...',
+        `Sharing ${toShare.length} status${toShare.length > 1 ? 'es' : ''}`,
+        'info'
+      );
+      await StatusScannerService.shareMultipleMedia(toShare);
     }
   };
 

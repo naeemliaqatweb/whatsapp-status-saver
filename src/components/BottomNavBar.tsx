@@ -84,9 +84,9 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
   },
   iconContainer: {
-    width: 60,
-    height: 32,
-    borderRadius: 16,
+    width: 52,
+    height: 30,
+    borderRadius: 15,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'transparent',
@@ -98,11 +98,12 @@ const styles = StyleSheet.create({
     ...TYPOGRAPHY.labelSm,
     fontSize: 11,
     color: PALETTE.onSurfaceVariant,
-    marginTop: 3,
+    marginTop: 4,
     fontWeight: '500',
+    backgroundColor: 'transparent',
   },
   activeNavLabel: {
-    color: PALETTE.onSecondaryContainer,
+    color: PALETTE.primaryContainer,
     fontWeight: '700',
   },
 });

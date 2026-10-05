@@ -202,6 +202,27 @@ export class StatusScannerService {
   }
 
   /**
+   * Share multiple media files (images & videos) simultaneously in one share sheet
+   */
+  public static async shareMultipleMedia(items: StatusMediaItem[]): Promise<void> {
+    try {
+      if (!items || items.length === 0) return;
+      if (items.length === 1) {
+        await this.shareMedia(items[0]);
+        return;
+      }
+      if (Platform.OS === 'android' && StatusScannerModule?.shareMultipleFiles) {
+        const filePaths = items.map((i) => i.filePath || i.uri);
+        await StatusScannerModule.shareMultipleFiles(filePaths);
+      } else {
+        await this.shareMedia(items[0]);
+      }
+    } catch (e) {
+      console.error('Error sharing multiple media items:', e);
+    }
+  }
+
+  /**
    * Repost media directly to WhatsApp / WA Business Status
    */
   public static async repostToWhatsApp(
