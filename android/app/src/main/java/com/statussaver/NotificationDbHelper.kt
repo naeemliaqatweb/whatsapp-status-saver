@@ -5,6 +5,7 @@ import android.content.Context
 import android.database.Cursor
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
+import android.util.Log
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.WritableArray
 import com.facebook.react.bridge.WritableMap
@@ -13,8 +14,9 @@ class NotificationDbHelper(context: Context) :
     SQLiteOpenHelper(context, DATABASE_NAME, null, DATABASE_VERSION) {
 
     companion object {
+        private const val TAG = "NotificationDbHelper"
         const val DATABASE_NAME = "whatsapp_recovery.db"
-        const val DATABASE_VERSION = 1
+        const val DATABASE_VERSION = 2
 
         const val TABLE_MESSAGES = "messages"
         const val COL_ID = "_id"
@@ -24,6 +26,10 @@ class NotificationDbHelper(context: Context) :
         const val COL_TIMESTAMP = "timestamp"
         const val COL_IS_DELETED = "is_deleted"
         const val COL_APP_TYPE = "app_type" // "whatsapp" or "business"
+        const val COL_MEDIA_TYPE = "media_type" // "voice", "audio", "image", "video", null
+        const val COL_MEDIA_URI = "media_uri" // file://...
+        const val COL_MEDIA_DURATION = "media_duration" // in seconds
+        const val COL_MEDIA_SIZE = "media_size" // in bytes
     }
 
     override fun onCreate(db: SQLiteDatabase) {
@@ -35,17 +41,29 @@ class NotificationDbHelper(context: Context) :
                 $COL_TEXT TEXT,
                 $COL_TIMESTAMP INTEGER,
                 $COL_IS_DELETED INTEGER DEFAULT 0,
-                $COL_APP_TYPE TEXT DEFAULT 'whatsapp'
+                $COL_APP_TYPE TEXT DEFAULT 'whatsapp',
+                $COL_MEDIA_TYPE TEXT,
+                $COL_MEDIA_URI TEXT,
+                $COL_MEDIA_DURATION INTEGER DEFAULT 0,
+                $COL_MEDIA_SIZE INTEGER DEFAULT 0
             )
         """.trimIndent()
         db.execSQL(createTable)
-        db.execSQL("CREATE INDEX idx_sender ON $TABLE_MESSAGES($COL_SENDER)")
-        db.execSQL("CREATE INDEX idx_timestamp ON $TABLE_MESSAGES($COL_TIMESTAMP)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_sender ON $TABLE_MESSAGES($COL_SENDER)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_timestamp ON $TABLE_MESSAGES($COL_TIMESTAMP)")
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        db.execSQL("DROP TABLE IF EXISTS $TABLE_MESSAGES")
-        onCreate(db)
+        if (oldVersion < 2) {
+            try {
+                db.execSQL("ALTER TABLE $TABLE_MESSAGES ADD COLUMN $COL_MEDIA_TYPE TEXT")
+                db.execSQL("ALTER TABLE $TABLE_MESSAGES ADD COLUMN $COL_MEDIA_URI TEXT")
+                db.execSQL("ALTER TABLE $TABLE_MESSAGES ADD COLUMN $COL_MEDIA_DURATION INTEGER DEFAULT 0")
+                db.execSQL("ALTER TABLE $TABLE_MESSAGES ADD COLUMN $COL_MEDIA_SIZE INTEGER DEFAULT 0")
+            } catch (e: Exception) {
+                Log.e(TAG, "Error adding columns on upgrade: ${e.message}")
+            }
+        }
     }
 
     @Synchronized
@@ -55,7 +73,11 @@ class NotificationDbHelper(context: Context) :
         text: String,
         timestamp: Long,
         isDeleted: Boolean = false,
-        appType: String = "whatsapp"
+        appType: String = "whatsapp",
+        mediaType: String? = null,
+        mediaUri: String? = null,
+        mediaDuration: Int = 0,
+        mediaSize: Long = 0
     ): Long {
         val db = writableDatabase
         val values = ContentValues().apply {
@@ -65,6 +87,10 @@ class NotificationDbHelper(context: Context) :
             put(COL_TIMESTAMP, timestamp)
             put(COL_IS_DELETED, if (isDeleted) 1 else 0)
             put(COL_APP_TYPE, appType)
+            put(COL_MEDIA_TYPE, mediaType)
+            put(COL_MEDIA_URI, mediaUri)
+            put(COL_MEDIA_DURATION, mediaDuration)
+            put(COL_MEDIA_SIZE, mediaSize)
         }
         return db.insert(TABLE_MESSAGES, null, values)
     }
@@ -76,7 +102,7 @@ class NotificationDbHelper(context: Context) :
         val timeThreshold = deleteTimestamp - (12 * 60 * 60 * 1000)
         val cursor = db.rawQuery(
             """
-            SELECT $COL_ID, $COL_TEXT FROM $TABLE_MESSAGES 
+            SELECT $COL_ID, $COL_TEXT, $COL_MEDIA_TYPE, $COL_MEDIA_URI FROM $TABLE_MESSAGES 
             WHERE $COL_SENDER = ? AND $COL_IS_DELETED = 0 AND $COL_TIMESTAMP >= ?
             ORDER BY $COL_TIMESTAMP DESC LIMIT 1
             """.trimIndent(),
@@ -120,6 +146,7 @@ class NotificationDbHelper(context: Context) :
                 $COL_TEXT,
                 $COL_TIMESTAMP,
                 $COL_IS_DELETED,
+                $COL_MEDIA_TYPE,
                 (SELECT COUNT(*) FROM $TABLE_MESSAGES m2 WHERE m2.$COL_SENDER = m1.$COL_SENDER) as total_messages,
                 (SELECT COUNT(*) FROM $TABLE_MESSAGES m3 WHERE m3.$COL_SENDER = m1.$COL_SENDER AND m3.$COL_IS_DELETED = 1) as deleted_count
             FROM $TABLE_MESSAGES m1
@@ -139,6 +166,7 @@ class NotificationDbHelper(context: Context) :
                 val lastText = cursor.getString(cursor.getColumnIndexOrThrow(COL_TEXT))
                 val timestamp = cursor.getLong(cursor.getColumnIndexOrThrow(COL_TIMESTAMP))
                 val isDeleted = cursor.getInt(cursor.getColumnIndexOrThrow(COL_IS_DELETED)) == 1
+                val mediaType = cursor.getString(cursor.getColumnIndexOrThrow(COL_MEDIA_TYPE))
                 val totalMessages = cursor.getInt(cursor.getColumnIndexOrThrow("total_messages"))
                 val deletedCount = cursor.getInt(cursor.getColumnIndexOrThrow("deleted_count"))
 
@@ -151,6 +179,7 @@ class NotificationDbHelper(context: Context) :
                     putDouble("timestamp", timestamp.toDouble())
                     putString("timeAgo", formatTimeAgo(timestamp))
                     putBoolean("isDeleted", isDeleted)
+                    putString("mediaType", mediaType)
                     putInt("totalMessages", totalMessages)
                     putInt("deletedCount", deletedCount)
                 }
@@ -168,7 +197,17 @@ class NotificationDbHelper(context: Context) :
         val db = readableDatabase
 
         val query = """
-            SELECT $COL_ID, $COL_SENDER, $COL_TEXT, $COL_TIMESTAMP, $COL_IS_DELETED, $COL_APP_TYPE
+            SELECT 
+                $COL_ID, 
+                $COL_SENDER, 
+                $COL_TEXT, 
+                $COL_TIMESTAMP, 
+                $COL_IS_DELETED, 
+                $COL_APP_TYPE,
+                $COL_MEDIA_TYPE,
+                $COL_MEDIA_URI,
+                $COL_MEDIA_DURATION,
+                $COL_MEDIA_SIZE
             FROM $TABLE_MESSAGES
             WHERE $COL_SENDER = ?
             ORDER BY $COL_TIMESTAMP ASC
@@ -184,6 +223,10 @@ class NotificationDbHelper(context: Context) :
                 val timestamp = cursor.getLong(cursor.getColumnIndexOrThrow(COL_TIMESTAMP))
                 val isDeleted = cursor.getInt(cursor.getColumnIndexOrThrow(COL_IS_DELETED)) == 1
                 val appType = cursor.getString(cursor.getColumnIndexOrThrow(COL_APP_TYPE))
+                val mediaType = cursor.getString(cursor.getColumnIndexOrThrow(COL_MEDIA_TYPE))
+                val mediaUri = cursor.getString(cursor.getColumnIndexOrThrow(COL_MEDIA_URI))
+                val mediaDuration = cursor.getInt(cursor.getColumnIndexOrThrow(COL_MEDIA_DURATION))
+                val mediaSize = cursor.getLong(cursor.getColumnIndexOrThrow(COL_MEDIA_SIZE))
 
                 val msgMap = Arguments.createMap().apply {
                     putString("id", id.toString())
@@ -194,6 +237,10 @@ class NotificationDbHelper(context: Context) :
                     putString("timeFormatted", formatTime(timestamp))
                     putBoolean("isDeleted", isDeleted)
                     putString("appType", appType)
+                    putString("mediaType", mediaType)
+                    putString("mediaUri", mediaUri)
+                    putInt("mediaDuration", mediaDuration)
+                    putDouble("mediaSize", mediaSize.toDouble())
                 }
                 result.pushMap(msgMap)
             }

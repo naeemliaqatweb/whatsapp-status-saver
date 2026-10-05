@@ -17,6 +17,7 @@ import { Platform } from 'react-native';
 import { Icon } from '@/components/ui/Icon';
 import { RecoveredChat, RecoveredMessage } from '@/types/status';
 import { NotificationRecoveryService } from '@/services/notificationRecoveryService';
+import { ChatMediaView } from './ChatMediaView';
 
 interface ChatDetailModalProps {
   visible: boolean;
@@ -198,14 +199,7 @@ export const ChatDetailModal: React.FC<ChatDetailModalProps> = ({
                     </View>
                   )}
 
-                  <Text
-                    style={[
-                      styles.messageText,
-                      isDeleted && styles.deletedMessageText,
-                    ]}
-                  >
-                    {item.text}
-                  </Text>
+                  <ChatMediaView message={item} />
 
                   <View style={styles.messageFooter}>
                     <Text style={styles.timestampText}>

@@ -117,13 +117,14 @@ class NotificationRecoveryModule(private val reactContext: ReactApplicationConte
     fun seedSampleMessages(promise: Promise) {
         try {
             val now = System.currentTimeMillis()
-            // Sample contacts to showcase UI immediately
-            dbHelper.insertMessage("com.whatsapp", "Ahmad Khan", "Assalam o Alaikum bhai, kya hal hai?", now - 3600000 * 2, false, "whatsapp")
+            // Sample contacts to showcase UI immediately with rich media
+            dbHelper.insertMessage("com.whatsapp", "Ahmad Khan", "Assalam o Alaikum bhai, kya hal hai?", now - 3600000 * 3, false, "whatsapp")
+            dbHelper.insertMessage("com.whatsapp", "Ahmad Khan", "🎤 Voice message (0:12)", now - 3600000 * 2, false, "whatsapp", "voice", null, 12, 45000)
             dbHelper.insertMessage("com.whatsapp", "Ahmad Khan", "Are you available today?", now - 3600000, false, "whatsapp")
-            dbHelper.insertMessage("com.whatsapp", "Ahmad Khan", "Please send me the status video link!", now - 1800000, true, "whatsapp") // Deleted
+            dbHelper.insertMessage("com.whatsapp", "Ahmad Khan", "🎤 Voice message (0:08)", now - 1800000, true, "whatsapp", "voice", null, 8, 32000) // Deleted Voice
 
             dbHelper.insertMessage("com.whatsapp", "Family Group", "Dinner tonight at 9 PM!", now - 7200000, false, "whatsapp")
-            dbHelper.insertMessage("com.whatsapp", "Family Group", "Don't forget to bring the photos", now - 3600000, true, "whatsapp") // Deleted
+            dbHelper.insertMessage("com.whatsapp", "Family Group", "📷 Photo", now - 3600000, true, "whatsapp", "image", null, 0, 150000) // Deleted Photo
 
             dbHelper.insertMessage("com.whatsapp.w4b", "Customer Support", "Your order #4829 has been shipped.", now - 86400000, false, "business")
             promise.resolve(true)

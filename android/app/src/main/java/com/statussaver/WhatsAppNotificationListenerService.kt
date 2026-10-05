@@ -62,12 +62,13 @@ class WhatsAppNotificationListenerService : NotificationListenerService() {
                 sender.equals("WhatsApp Business", ignoreCase = true) ||
                 message.contains("Checking for new messages", ignoreCase = true) ||
                 message.contains("WhatsApp Web is currently active", ignoreCase = true) ||
-                message.contains("new messages", ignoreCase = true) && sender.contains("WhatsApp", ignoreCase = true)) {
+                (message.contains("new messages", ignoreCase = true) && sender.contains("WhatsApp", ignoreCase = true))) {
                 return
             }
 
             val timestamp = sbn.postTime
-            val appType = if (pkg == WHATSAPP_BUSINESS_PKG) "business" else "whatsapp"
+            val isBusiness = (pkg == WHATSAPP_BUSINESS_PKG)
+            val appType = if (isBusiness) "business" else "whatsapp"
 
             // Check if this is a "This message was deleted" notification
             val isDeletedTrigger = isDeletedMessageNotification(message)
@@ -77,13 +78,37 @@ class WhatsAppNotificationListenerService : NotificationListenerService() {
                 dbHelper.markLatestMessageDeleted(sender, timestamp)
             } else {
                 Log.d(TAG, "Intercepted message from $sender: $message")
+
+                // Detect if notification is a Voice Note, Image, Video, or Audio
+                val mediaType = WhatsAppMediaRecoveryHelper.detectMediaTypeFromText(message)
+                var mediaUri: String? = null
+                var mediaDuration = 0
+                var mediaSize = 0L
+
+                if (mediaType != null) {
+                    val mediaInfo = WhatsAppMediaRecoveryHelper.findAndCacheRecentMedia(
+                        applicationContext,
+                        mediaType,
+                        isBusiness
+                    )
+                    if (mediaInfo != null) {
+                        mediaUri = mediaInfo.cachedFilePath
+                        mediaDuration = mediaInfo.durationSeconds
+                        mediaSize = mediaInfo.fileSizeBytes
+                    }
+                }
+
                 dbHelper.insertMessage(
                     packageName = pkg,
                     sender = sender,
                     text = message,
                     timestamp = timestamp,
                     isDeleted = false,
-                    appType = appType
+                    appType = appType,
+                    mediaType = mediaType,
+                    mediaUri = mediaUri,
+                    mediaDuration = mediaDuration,
+                    mediaSize = mediaSize
                 )
             }
 
