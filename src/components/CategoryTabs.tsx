@@ -18,6 +18,7 @@ export const CategoryTabs: React.FC<CategoryTabsProps> = ({
     { key: 'images', label: 'Images', count: counts.images },
     { key: 'videos', label: 'Videos', count: counts.videos },
     { key: 'saved', label: 'Saved', count: counts.saved },
+    { key: 'chats', label: 'Chats', count: counts.chats || 0 },
   ];
 
   return (

@@ -16,11 +16,12 @@ export const BottomNavBar: React.FC<BottomNavBarProps> = ({
   const navItems: Array<{
     key: TabType;
     label: string;
-    icon: 'photo_library' | 'smart_display' | 'bookmark';
+    icon: 'photo_library' | 'smart_display' | 'bookmark' | 'chat';
   }> = [
     { key: 'images', label: 'Images', icon: 'photo_library' },
     { key: 'videos', label: 'Videos', icon: 'smart_display' },
     { key: 'saved', label: 'Saved', icon: 'bookmark' },
+    { key: 'chats', label: 'Chats', icon: 'chat' },
   ];
 
   return (

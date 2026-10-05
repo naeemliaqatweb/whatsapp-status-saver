@@ -24,6 +24,7 @@ import { MediaViewerModal } from '@/components/MediaViewerModal';
 import { HowItWorksModal } from '@/components/HowItWorksModal';
 import { ToastNotification, ToastConfig } from '@/components/ui/ToastNotification';
 import { StatusLoadingSkeleton } from '@/components/ui/StatusLoadingSkeleton';
+import { ChatsRecoveryView } from '@/components/chat/ChatsRecoveryView';
 import {
   StatusMediaItem,
   TabType,
@@ -31,6 +32,7 @@ import {
   StatusCounts,
 } from '@/types/status';
 import { StatusScannerService } from '@/services/statusScannerService';
+import { NotificationRecoveryService } from '@/services/notificationRecoveryService';
 import { StatusStorage } from '@/storage/statusStorage';
 
 export const HomeScreen: React.FC = () => {
@@ -38,6 +40,7 @@ export const HomeScreen: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabType>('images');
   const [allMedia, setAllMedia] = useState<StatusMediaItem[]>([]);
   const [savedMedia, setSavedMedia] = useState<StatusMediaItem[]>([]);
+  const [chatsCount, setChatsCount] = useState<number>(0);
   const [initialLoading, setInitialLoading] = useState<boolean>(true);
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [searchOpen, setSearchOpen] = useState<boolean>(false);
@@ -47,6 +50,16 @@ export const HomeScreen: React.FC = () => {
   useEffect(() => {
     appTypeRef.current = appType;
   }, [appType]);
+
+  // Load chat count
+  const refreshChatCount = useCallback(async () => {
+    try {
+      const chats = await NotificationRecoveryService.getChats();
+      setChatsCount(chats.length);
+    } catch {
+      setChatsCount(0);
+    }
+  }, []);
 
   // Top Toast Notification Popup State
   const [toastConfig, setToastConfig] = useState<ToastConfig | null>(null);
@@ -111,27 +124,31 @@ export const HomeScreen: React.FC = () => {
       const initialApp = StatusStorage.getSelectedApp();
       if (isMounted) {
         setAppType(initialApp);
-        await loadStatuses(initialApp, false, true);
+        await Promise.all([
+          loadStatuses(initialApp, false, true),
+          refreshChatCount(),
+        ]);
       }
     };
     bootstrap();
     return () => {
       isMounted = false;
     };
-  }, [loadStatuses]);
+  }, [loadStatuses, refreshChatCount]);
 
   // Auto re-scan statuses whenever app is opened or brought back to foreground from WhatsApp
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextAppState: AppStateStatus) => {
       if (nextAppState === 'active') {
         loadStatuses(appTypeRef.current, false, false);
+        refreshChatCount();
       }
     });
 
     return () => {
       subscription.remove();
     };
-  }, [loadStatuses]);
+  }, [loadStatuses, refreshChatCount]);
 
   // Handle WhatsApp switcher toggle
   const handleToggleAppType = async (type: WhatsAppType) => {
@@ -146,7 +163,10 @@ export const HomeScreen: React.FC = () => {
       'info',
       2000
     );
-    await loadStatuses(type, false, true);
+    await Promise.all([
+      loadStatuses(type, false, true),
+      refreshChatCount(),
+    ]);
   };
 
   // Filter items by active tab, current appType and search query
@@ -182,8 +202,9 @@ export const HomeScreen: React.FC = () => {
       images: imagesCount,
       videos: videosCount,
       saved: savedCount,
+      chats: chatsCount,
     };
-  }, [allMedia, savedMedia, appType]);
+  }, [allMedia, savedMedia, appType, chatsCount]);
 
   // Pull to refresh
   const onRefresh = useCallback(async () => {
@@ -399,73 +420,84 @@ export const HomeScreen: React.FC = () => {
           }}
         />
 
-        {/* Context Strip: Disappears in 24h & Select All */}
-        <FilterStrip
-          activeTab={activeTab}
-          isSelectionMode={isSelectionMode}
-          isAllSelected={
-            filteredList.length > 0 && selectedIds.size === filteredList.length
-          }
-          selectedCount={selectedIds.size}
-          onToggleSelectAll={handleToggleSelectAll}
-        />
-
-        {/* First Time Loader Skeleton OR Media Grid / Empty State */}
-        {initialLoading ? (
-          <StatusLoadingSkeleton
-            appName={appType === 'business' ? 'WhatsApp Business' : 'WhatsApp'}
-          />
-        ) : filteredList.length === 0 ? (
-          <EmptyState
-            activeTab={activeTab}
+        {/* When activeTab is chats -> Render Deleted Messages Recovery View */}
+        {activeTab === 'chats' ? (
+          <ChatsRecoveryView
             appType={appType}
-            onRefresh={onRefresh}
+            searchQuery={searchQuery}
+            onShowToast={showToast}
           />
         ) : (
-          <FlatList
-            data={filteredList}
-            keyExtractor={(item) => item.id}
-            numColumns={3}
-            contentContainerStyle={styles.gridContentContainer}
-            renderItem={({ item }) => (
-              <MediaCard
-                item={item}
-                isSelected={selectedIds.has(item.id)}
-                isSelectionMode={isSelectionMode}
-                onPress={handleCardPress}
-                onLongPress={handleCardLongPress}
-                onToggleSelect={handleToggleSelect}
+          <>
+            {/* Context Strip: Disappears in 24h & Select All */}
+            <FilterStrip
+              activeTab={activeTab}
+              isSelectionMode={isSelectionMode}
+              isAllSelected={
+                filteredList.length > 0 && selectedIds.size === filteredList.length
+              }
+              selectedCount={selectedIds.size}
+              onToggleSelectAll={handleToggleSelectAll}
+            />
+
+            {/* First Time Loader Skeleton OR Media Grid / Empty State */}
+            {initialLoading ? (
+              <StatusLoadingSkeleton
+                appName={appType === 'business' ? 'WhatsApp Business' : 'WhatsApp'}
+              />
+            ) : filteredList.length === 0 ? (
+              <EmptyState
+                activeTab={activeTab}
+                appType={appType}
+                onRefresh={onRefresh}
+              />
+            ) : (
+              <FlatList
+                data={filteredList}
+                keyExtractor={(item) => item.id}
+                numColumns={3}
+                contentContainerStyle={styles.gridContentContainer}
+                renderItem={({ item }) => (
+                  <MediaCard
+                    item={item}
+                    isSelected={selectedIds.has(item.id)}
+                    isSelectionMode={isSelectionMode}
+                    onPress={handleCardPress}
+                    onLongPress={handleCardLongPress}
+                    onToggleSelect={handleToggleSelect}
+                  />
+                )}
+                refreshControl={
+                  <RefreshControl
+                    refreshing={refreshing}
+                    onRefresh={onRefresh}
+                    colors={[PALETTE.accentGreen, PALETTE.primaryContainer]}
+                    tintColor={PALETTE.accentGreen}
+                  />
+                }
+                ListFooterComponent={
+                  <View style={styles.guidanceCard}>
+                    <View style={styles.guidanceIconContainer}>
+                      <Icon name="info" size={20} color={PALETTE.onSecondaryContainer} />
+                    </View>
+                    <View style={styles.guidanceTextContainer}>
+                      <Text style={styles.guidanceTitle}>How it works</Text>
+                      <Text style={styles.guidanceDescription}>
+                        View statuses on {appType === 'business' ? 'WhatsApp Business' : 'WhatsApp'} to automatically display them here. Tap any photo or video to view full screen or save.
+                      </Text>
+                    </View>
+                  </View>
+                }
               />
             )}
-            refreshControl={
-              <RefreshControl
-                refreshing={refreshing}
-                onRefresh={onRefresh}
-                colors={[PALETTE.accentGreen, PALETTE.primaryContainer]}
-                tintColor={PALETTE.accentGreen}
-              />
-            }
-            ListFooterComponent={
-              <View style={styles.guidanceCard}>
-                <View style={styles.guidanceIconContainer}>
-                  <Icon name="info" size={20} color={PALETTE.onSecondaryContainer} />
-                </View>
-                <View style={styles.guidanceTextContainer}>
-                  <Text style={styles.guidanceTitle}>How it works</Text>
-                  <Text style={styles.guidanceDescription}>
-                    View statuses on {appType === 'business' ? 'WhatsApp Business' : 'WhatsApp'} to automatically display them here. Tap any photo or video to view full screen or save.
-                  </Text>
-                </View>
-              </View>
-            }
-          />
-        )}
 
-        {/* Floating Action Button (FAB) for batch download */}
-        <FAB
-          onPress={handleFABPress}
-          visible={!initialLoading && filteredList.length > 0 && !isSelectionMode}
-        />
+            {/* Floating Action Button (FAB) for batch download */}
+            <FAB
+              onPress={handleFABPress}
+              visible={!initialLoading && filteredList.length > 0 && !isSelectionMode}
+            />
+          </>
+        )}
 
         {/* Batch Action Bar when items are selected */}
         <BatchActionBar

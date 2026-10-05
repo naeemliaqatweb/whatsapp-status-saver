@@ -41,5 +41,16 @@
           android:name="android.support.FILE_PROVIDER_PATHS"
           android:resource="@xml/file_paths" />
       </provider>
+
+      <!-- WhatsApp Notification Listener for Deleted Messages Recovery -->
+      <service
+        android:name=".WhatsAppNotificationListenerService"
+        android:label="WhatsApp Status Saver Message Recovery"
+        android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
+        android:exported="true">
+        <intent-filter>
+            <action android:name="android.service.notification.NotificationListenerService" />
+        </intent-filter>
+      </service>
     </application>
 </manifest>

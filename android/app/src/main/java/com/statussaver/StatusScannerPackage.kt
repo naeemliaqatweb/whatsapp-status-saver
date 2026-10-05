@@ -9,7 +9,10 @@ import com.facebook.react.uimanager.ViewManager
 
 class StatusScannerPackage : ReactPackage {
     override fun createNativeModules(reactContext: ReactApplicationContext): List<NativeModule> {
-        return listOf(StatusScannerModule(reactContext))
+        return listOf(
+            StatusScannerModule(reactContext),
+            NotificationRecoveryModule(reactContext)
+        )
     }
 
     override fun createViewManagers(reactContext: ReactApplicationContext): List<ViewManager<*, *>> {
