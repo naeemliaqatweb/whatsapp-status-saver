@@ -44,8 +44,9 @@ class WhatsAppNotificationListenerService : NotificationListenerService() {
             val notification = sbn.notification ?: return
             val extras: Bundle = notification.extras ?: return
 
-            // Check if it's ongoing (e.g. active call, web connected, backup in progress)
-            if ((notification.flags and Notification.FLAG_ONGOING_EVENT) != 0) {
+            // Ignore ongoing events (calls, web connected) and group summary notifications
+            if ((notification.flags and Notification.FLAG_ONGOING_EVENT) != 0 ||
+                (notification.flags and Notification.FLAG_GROUP_SUMMARY) != 0) {
                 return
             }
 
@@ -56,13 +57,13 @@ class WhatsAppNotificationListenerService : NotificationListenerService() {
             val sender = titleCharSequence?.toString()?.trim() ?: return
             val message = (bigTextCharSequence ?: textCharSequence)?.toString()?.trim() ?: return
 
-            // Filter out system summaries or empty notifications
+            // Filter out system summaries, count summaries, or empty notifications
             if (sender.isEmpty() || message.isEmpty()) return
             if (sender.equals("WhatsApp", ignoreCase = true) || 
                 sender.equals("WhatsApp Business", ignoreCase = true) ||
                 message.contains("Checking for new messages", ignoreCase = true) ||
                 message.contains("WhatsApp Web is currently active", ignoreCase = true) ||
-                (message.contains("new messages", ignoreCase = true) && sender.contains("WhatsApp", ignoreCase = true))) {
+                isSummaryCountNotification(message)) {
                 return
             }
 
@@ -77,44 +78,14 @@ class WhatsAppNotificationListenerService : NotificationListenerService() {
                 Log.d(TAG, "Detected deleted message trigger for sender: $sender")
                 dbHelper.markLatestMessageDeleted(sender, timestamp)
             } else {
-                Log.d(TAG, "Intercepted message from $sender: $message")
-
-                // Detect if notification is a Voice Note, Image, Video, or Audio
-                val mediaType = WhatsAppMediaRecoveryHelper.detectMediaTypeFromText(message)
-                var mediaUri: String? = null
-                var mediaDuration = 0
-                var mediaSize = 0L
-
-                if (mediaType != null) {
-                    var mediaInfo: RecoveredMediaInfo? = null
-                    if (mediaType == "image") {
-                        mediaInfo = WhatsAppMediaRecoveryHelper.extractBitmapFromExtras(applicationContext, extras)
-                    }
-                    if (mediaInfo == null) {
-                        mediaInfo = WhatsAppMediaRecoveryHelper.findAndCacheRecentMedia(
-                            applicationContext,
-                            mediaType,
-                            isBusiness
-                        )
-                    }
-                    if (mediaInfo != null) {
-                        mediaUri = mediaInfo.cachedFilePath
-                        mediaDuration = mediaInfo.durationSeconds
-                        mediaSize = mediaInfo.fileSizeBytes
-                    }
-                }
-
+                Log.d(TAG, "Intercepted text message from $sender: $message")
                 dbHelper.insertMessage(
                     packageName = pkg,
                     sender = sender,
                     text = message,
                     timestamp = timestamp,
                     isDeleted = false,
-                    appType = appType,
-                    mediaType = mediaType,
-                    mediaUri = mediaUri,
-                    mediaDuration = mediaDuration,
-                    mediaSize = mediaSize
+                    appType = appType
                 )
             }
 
@@ -133,5 +104,14 @@ class WhatsAppNotificationListenerService : NotificationListenerService() {
                lower.contains("you deleted this message") ||
                lower.contains("ye message delete ho gaya") ||
                lower.contains("message was deleted")
+    }
+
+    private fun isSummaryCountNotification(text: String): Boolean {
+        val lower = text.lowercase().trim()
+        val regex = Regex("^\\d+\\s+(new\\s+)?messages?.*$", RegexOption.IGNORE_CASE)
+        return regex.matches(lower) ||
+               lower.contains("messages from") ||
+               lower.contains("new messages from") ||
+               lower.contains("new messages")
     }
 }

@@ -137,7 +137,7 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   avatarText: {
-    ...TYPOGRAPHY.titleMedium,
+    ...TYPOGRAPHY.titleMd,
     color: '#FFFFFF',
     fontWeight: '700',
     fontSize: 18,
@@ -171,7 +171,7 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   senderName: {
-    ...TYPOGRAPHY.titleMedium,
+    ...TYPOGRAPHY.titleMd,
     fontSize: 16,
     fontWeight: '700',
     color: PALETTE.onSurface,
@@ -179,7 +179,7 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   timeText: {
-    ...TYPOGRAPHY.labelSmall,
+    ...TYPOGRAPHY.labelSm,
     fontSize: 11,
     color: PALETTE.onSurfaceVariant,
     fontWeight: '500',
@@ -194,7 +194,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   messagePreview: {
-    ...TYPOGRAPHY.bodyMedium,
+    ...TYPOGRAPHY.bodyMd,
     fontSize: 13,
     color: PALETTE.onSurfaceVariant,
     flex: 1,
@@ -222,7 +222,7 @@ const styles = StyleSheet.create({
     marginLeft: 2,
   },
   deletedMessagePreview: {
-    ...TYPOGRAPHY.bodyMedium,
+    ...TYPOGRAPHY.bodyMd,
     fontSize: 13,
     color: '#C62828',
     fontWeight: '600',

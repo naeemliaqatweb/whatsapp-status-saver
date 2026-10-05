@@ -6,18 +6,15 @@ import {
   FlatList,
   TouchableOpacity,
   StyleSheet,
-  SafeAreaView,
   StatusBar,
   Linking,
   Alert,
 } from 'react-native';
-import { PALETTE, TYPOGRAPHY, SPACING } from '@/constants/theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Platform } from 'react-native';
 import { Icon } from '@/components/ui/Icon';
 import { RecoveredChat, RecoveredMessage } from '@/types/status';
 import { NotificationRecoveryService } from '@/services/notificationRecoveryService';
-import { ChatMediaView } from './ChatMediaView';
 
 interface ChatDetailModalProps {
   visible: boolean;
@@ -34,7 +31,6 @@ export const ChatDetailModal: React.FC<ChatDetailModalProps> = ({
 }) => {
   const insets = useSafeAreaInsets();
   const [messages, setMessages] = useState<RecoveredMessage[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
 
   // Exact matching safe top padding ensuring battery / time / wifi status bar doesn't overlap
   const safeTopPadding = Math.max(
@@ -50,14 +46,11 @@ export const ChatDetailModal: React.FC<ChatDetailModalProps> = ({
 
   const loadMessages = async () => {
     if (!chat) return;
-    setLoading(true);
     try {
       const msgs = await NotificationRecoveryService.getChatMessages(chat.senderName);
       setMessages(msgs);
     } catch (e) {
       console.error('Error loading chat messages:', e);
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -108,7 +101,7 @@ export const ChatDetailModal: React.FC<ChatDetailModalProps> = ({
       statusBarTranslucent={true}
     >
       <View style={styles.safeArea}>
-        <StatusBar backgroundColor="#075E54" barStyle="light-content" translucent={true} />
+        <StatusBar barStyle="light-content" />
 
         {/* WhatsApp Chat Room Top Header with safe status bar padding */}
         <View style={[styles.headerContainer, { paddingTop: safeTopPadding + 8 }]}>
@@ -199,7 +192,14 @@ export const ChatDetailModal: React.FC<ChatDetailModalProps> = ({
                     </View>
                   )}
 
-                  <ChatMediaView message={item} />
+                  <Text
+                    style={[
+                      styles.messageText,
+                      isDeleted && styles.deletedMessageText,
+                    ]}
+                  >
+                    {item.text}
+                  </Text>
 
                   <View style={styles.messageFooter}>
                     <Text style={styles.timestampText}>

@@ -15,10 +15,8 @@ export interface StatusMediaItem {
   timestamp: number;
   sizeBytes?: number;
   isSaved: boolean;
-  appSource: WhatsAppType; // 'whatsapp' or 'business'
+  appSource: WhatsAppType;
 }
-
-export type RecoveredMediaType = 'voice' | 'audio' | 'image' | 'video' | 'document' | null;
 
 export interface RecoveredChat {
   id: string;
@@ -31,7 +29,6 @@ export interface RecoveredChat {
   isDeleted: boolean;
   totalMessages: number;
   deletedCount: number;
-  mediaType?: RecoveredMediaType;
 }
 
 export interface RecoveredMessage {
@@ -43,10 +40,6 @@ export interface RecoveredMessage {
   timeFormatted: string;
   isDeleted: boolean;
   appType: WhatsAppType;
-  mediaType?: RecoveredMediaType;
-  mediaUri?: string | null;
-  mediaDuration?: number; // duration in seconds
-  mediaSize?: number; // bytes
 }
 
 export interface StatusCounts {

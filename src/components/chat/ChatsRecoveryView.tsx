@@ -29,7 +29,6 @@ export const ChatsRecoveryView: React.FC<ChatsRecoveryViewProps> = ({
 }) => {
   const [hasPermission, setHasPermission] = useState<boolean>(true);
   const [chats, setChats] = useState<RecoveredChat[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [selectedChat, setSelectedChat] = useState<RecoveredChat | null>(null);
   const [detailVisible, setDetailVisible] = useState<boolean>(false);
@@ -43,7 +42,6 @@ export const ChatsRecoveryView: React.FC<ChatsRecoveryViewProps> = ({
     } else {
       setChats([]);
     }
-    setLoading(false);
     setRefreshing(false);
   }, []);
 
@@ -247,7 +245,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   permissionTitle: {
-    ...TYPOGRAPHY.titleMedium,
+    ...TYPOGRAPHY.titleMd,
     fontSize: 17,
     fontWeight: '700',
     color: '#075E54',
@@ -255,7 +253,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   permissionDesc: {
-    ...TYPOGRAPHY.bodyMedium,
+    ...TYPOGRAPHY.bodyMd,
     fontSize: 13,
     color: '#2E7D32',
     textAlign: 'center',
@@ -318,7 +316,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   emptyTitle: {
-    ...TYPOGRAPHY.titleMedium,
+    ...TYPOGRAPHY.titleMd,
     fontSize: 18,
     fontWeight: '700',
     color: PALETTE.onSurface,
@@ -326,7 +324,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   emptyDesc: {
-    ...TYPOGRAPHY.bodyMedium,
+    ...TYPOGRAPHY.bodyMd,
     fontSize: 13,
     color: PALETTE.onSurfaceVariant,
     textAlign: 'center',

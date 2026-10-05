@@ -11,8 +11,7 @@ class StatusScannerPackage : ReactPackage {
     override fun createNativeModules(reactContext: ReactApplicationContext): List<NativeModule> {
         return listOf(
             StatusScannerModule(reactContext),
-            NotificationRecoveryModule(reactContext),
-            AudioPlayerModule(reactContext)
+            NotificationRecoveryModule(reactContext)
         )
     }
 

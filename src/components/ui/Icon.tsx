@@ -34,7 +34,8 @@ export type IconName =
   | 'chat_bubble'
   | 'person'
   | 'notifications'
-  | 'security';
+  | 'security'
+  | 'send';
 
 interface IconProps {
   name: IconName;

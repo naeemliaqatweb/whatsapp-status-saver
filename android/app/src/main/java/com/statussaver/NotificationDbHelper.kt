@@ -16,7 +16,7 @@ class NotificationDbHelper(private val context: Context) :
     companion object {
         private const val TAG = "NotificationDbHelper"
         const val DATABASE_NAME = "whatsapp_recovery.db"
-        const val DATABASE_VERSION = 2
+        const val DATABASE_VERSION = 1
 
         const val TABLE_MESSAGES = "messages"
         const val COL_ID = "_id"
@@ -26,10 +26,6 @@ class NotificationDbHelper(private val context: Context) :
         const val COL_TIMESTAMP = "timestamp"
         const val COL_IS_DELETED = "is_deleted"
         const val COL_APP_TYPE = "app_type" // "whatsapp" or "business"
-        const val COL_MEDIA_TYPE = "media_type" // "voice", "audio", "image", "video", null
-        const val COL_MEDIA_URI = "media_uri" // file://...
-        const val COL_MEDIA_DURATION = "media_duration" // in seconds
-        const val COL_MEDIA_SIZE = "media_size" // in bytes
     }
 
     override fun onCreate(db: SQLiteDatabase) {
@@ -41,11 +37,7 @@ class NotificationDbHelper(private val context: Context) :
                 $COL_TEXT TEXT,
                 $COL_TIMESTAMP INTEGER,
                 $COL_IS_DELETED INTEGER DEFAULT 0,
-                $COL_APP_TYPE TEXT DEFAULT 'whatsapp',
-                $COL_MEDIA_TYPE TEXT,
-                $COL_MEDIA_URI TEXT,
-                $COL_MEDIA_DURATION INTEGER DEFAULT 0,
-                $COL_MEDIA_SIZE INTEGER DEFAULT 0
+                $COL_APP_TYPE TEXT DEFAULT 'whatsapp'
             )
         """.trimIndent()
         db.execSQL(createTable)
@@ -54,15 +46,43 @@ class NotificationDbHelper(private val context: Context) :
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        if (oldVersion < 2) {
-            try {
-                db.execSQL("ALTER TABLE $TABLE_MESSAGES ADD COLUMN $COL_MEDIA_TYPE TEXT")
-                db.execSQL("ALTER TABLE $TABLE_MESSAGES ADD COLUMN $COL_MEDIA_URI TEXT")
-                db.execSQL("ALTER TABLE $TABLE_MESSAGES ADD COLUMN $COL_MEDIA_DURATION INTEGER DEFAULT 0")
-                db.execSQL("ALTER TABLE $TABLE_MESSAGES ADD COLUMN $COL_MEDIA_SIZE INTEGER DEFAULT 0")
-            } catch (e: Exception) {
-                Log.e(TAG, "Error adding columns on upgrade: ${e.message}")
-            }
+        // Safe schema upgrade
+    }
+
+    fun isRecentDuplicate(sender: String, text: String, timestamp: Long): Boolean {
+        val db = readableDatabase
+        val cutoffMin = timestamp - 15000L
+        val cutoffMax = timestamp + 15000L
+        val cursor = db.rawQuery(
+            """
+            SELECT $COL_ID FROM $TABLE_MESSAGES 
+            WHERE $COL_SENDER = ? AND $COL_TEXT = ? AND $COL_TIMESTAMP BETWEEN ? AND ?
+            LIMIT 1
+            """.trimIndent(),
+            arrayOf(sender, text, cutoffMin.toString(), cutoffMax.toString())
+        )
+        val exists = cursor.moveToFirst()
+        cursor.close()
+        return exists
+    }
+
+    @Synchronized
+    fun cleanupExistingDuplicates() {
+        try {
+            val db = writableDatabase
+            // 1. Delete generic notification summaries like "2 new messages", "3 new messages"
+            db.delete(TABLE_MESSAGES, "$COL_TEXT LIKE '%new message%' OR $COL_TEXT LIKE '%new messages%'", null)
+
+            // 2. Remove duplicate message entries for the same sender and text within 15s
+            db.execSQL("""
+                DELETE FROM $TABLE_MESSAGES 
+                WHERE $COL_ID NOT IN (
+                    SELECT MIN($COL_ID) FROM $TABLE_MESSAGES 
+                    GROUP BY $COL_SENDER, $COL_TEXT, ($COL_TIMESTAMP / 15000)
+                )
+            """.trimIndent())
+        } catch (e: Exception) {
+            Log.e(TAG, "Error cleaning duplicates: ${e.message}")
         }
     }
 
@@ -73,12 +93,14 @@ class NotificationDbHelper(private val context: Context) :
         text: String,
         timestamp: Long,
         isDeleted: Boolean = false,
-        appType: String = "whatsapp",
-        mediaType: String? = null,
-        mediaUri: String? = null,
-        mediaDuration: Int = 0,
-        mediaSize: Long = 0
+        appType: String = "whatsapp"
     ): Long {
+        // Prevent duplicate insertion
+        if (!isDeleted && isRecentDuplicate(sender, text, timestamp)) {
+            Log.d(TAG, "Duplicate message suppressed for $sender: $text")
+            return -1L
+        }
+
         val db = writableDatabase
         val values = ContentValues().apply {
             put(COL_PACKAGE, packageName)
@@ -87,10 +109,6 @@ class NotificationDbHelper(private val context: Context) :
             put(COL_TIMESTAMP, timestamp)
             put(COL_IS_DELETED, if (isDeleted) 1 else 0)
             put(COL_APP_TYPE, appType)
-            put(COL_MEDIA_TYPE, mediaType)
-            put(COL_MEDIA_URI, mediaUri)
-            put(COL_MEDIA_DURATION, mediaDuration)
-            put(COL_MEDIA_SIZE, mediaSize)
         }
         return db.insert(TABLE_MESSAGES, null, values)
     }
@@ -102,7 +120,7 @@ class NotificationDbHelper(private val context: Context) :
         val timeThreshold = deleteTimestamp - (12 * 60 * 60 * 1000)
         val cursor = db.rawQuery(
             """
-            SELECT $COL_ID, $COL_TEXT, $COL_MEDIA_TYPE, $COL_MEDIA_URI FROM $TABLE_MESSAGES 
+            SELECT $COL_ID, $COL_TEXT FROM $TABLE_MESSAGES 
             WHERE $COL_SENDER = ? AND $COL_IS_DELETED = 0 AND $COL_TIMESTAMP >= ?
             ORDER BY $COL_TIMESTAMP DESC LIMIT 1
             """.trimIndent(),
@@ -135,6 +153,7 @@ class NotificationDbHelper(private val context: Context) :
     }
 
     fun getChatsList(): WritableArray {
+        cleanupExistingDuplicates()
         val result = Arguments.createArray()
         val db = readableDatabase
 
@@ -146,7 +165,6 @@ class NotificationDbHelper(private val context: Context) :
                 $COL_TEXT,
                 $COL_TIMESTAMP,
                 $COL_IS_DELETED,
-                $COL_MEDIA_TYPE,
                 (SELECT COUNT(*) FROM $TABLE_MESSAGES m2 WHERE m2.$COL_SENDER = m1.$COL_SENDER) as total_messages,
                 (SELECT COUNT(*) FROM $TABLE_MESSAGES m3 WHERE m3.$COL_SENDER = m1.$COL_SENDER AND m3.$COL_IS_DELETED = 1) as deleted_count
             FROM $TABLE_MESSAGES m1
@@ -166,7 +184,6 @@ class NotificationDbHelper(private val context: Context) :
                 val lastText = cursor.getString(cursor.getColumnIndexOrThrow(COL_TEXT))
                 val timestamp = cursor.getLong(cursor.getColumnIndexOrThrow(COL_TIMESTAMP))
                 val isDeleted = cursor.getInt(cursor.getColumnIndexOrThrow(COL_IS_DELETED)) == 1
-                val mediaType = cursor.getString(cursor.getColumnIndexOrThrow(COL_MEDIA_TYPE))
                 val totalMessages = cursor.getInt(cursor.getColumnIndexOrThrow("total_messages"))
                 val deletedCount = cursor.getInt(cursor.getColumnIndexOrThrow("deleted_count"))
 
@@ -179,7 +196,6 @@ class NotificationDbHelper(private val context: Context) :
                     putDouble("timestamp", timestamp.toDouble())
                     putString("timeAgo", formatTimeAgo(timestamp))
                     putBoolean("isDeleted", isDeleted)
-                    putString("mediaType", mediaType)
                     putInt("totalMessages", totalMessages)
                     putInt("deletedCount", deletedCount)
                 }
@@ -203,11 +219,7 @@ class NotificationDbHelper(private val context: Context) :
                 $COL_TEXT, 
                 $COL_TIMESTAMP, 
                 $COL_IS_DELETED, 
-                $COL_APP_TYPE,
-                $COL_MEDIA_TYPE,
-                $COL_MEDIA_URI,
-                $COL_MEDIA_DURATION,
-                $COL_MEDIA_SIZE
+                $COL_APP_TYPE
             FROM $TABLE_MESSAGES
             WHERE $COL_SENDER = ?
             ORDER BY $COL_TIMESTAMP ASC
@@ -223,31 +235,6 @@ class NotificationDbHelper(private val context: Context) :
                 val timestamp = cursor.getLong(cursor.getColumnIndexOrThrow(COL_TIMESTAMP))
                 val isDeleted = cursor.getInt(cursor.getColumnIndexOrThrow(COL_IS_DELETED)) == 1
                 val appType = cursor.getString(cursor.getColumnIndexOrThrow(COL_APP_TYPE))
-                var mediaType = cursor.getString(cursor.getColumnIndexOrThrow(COL_MEDIA_TYPE))
-                val mediaUri = cursor.getString(cursor.getColumnIndexOrThrow(COL_MEDIA_URI))
-                var mediaDuration = cursor.getInt(cursor.getColumnIndexOrThrow(COL_MEDIA_DURATION))
-                val mediaSize = cursor.getLong(cursor.getColumnIndexOrThrow(COL_MEDIA_SIZE))
-
-                var resolvedMediaUri = mediaUri
-
-                if (mediaType == "image" || text.contains("Photo") || text.contains("📷")) {
-                    mediaType = "image"
-                    if (resolvedMediaUri.isNullOrEmpty() || !java.io.File(resolvedMediaUri.replace("file://", "")).exists()) {
-                        val fallback = WhatsAppMediaRecoveryHelper.getAnyAvailableImage(context)
-                        if (fallback != null) {
-                            resolvedMediaUri = fallback.cachedFilePath
-                        }
-                    }
-                } else if (mediaType == "voice" || mediaType == "audio" || text.contains("Voice message")) {
-                    mediaType = "voice"
-                    if (resolvedMediaUri.isNullOrEmpty() || !java.io.File(resolvedMediaUri.replace("file://", "")).exists()) {
-                        val fallback = WhatsAppMediaRecoveryHelper.getAnyAvailableVoiceNote(context)
-                        if (fallback != null) {
-                            resolvedMediaUri = fallback.cachedFilePath
-                            if (mediaDuration <= 0) mediaDuration = fallback.durationSeconds
-                        }
-                    }
-                }
 
                 val msgMap = Arguments.createMap().apply {
                     putString("id", id.toString())
@@ -258,10 +245,6 @@ class NotificationDbHelper(private val context: Context) :
                     putString("timeFormatted", formatTime(timestamp))
                     putBoolean("isDeleted", isDeleted)
                     putString("appType", appType)
-                    putString("mediaType", mediaType)
-                    putString("mediaUri", resolvedMediaUri)
-                    putInt("mediaDuration", mediaDuration)
-                    putDouble("mediaSize", mediaSize.toDouble())
                 }
                 result.pushMap(msgMap)
             }
