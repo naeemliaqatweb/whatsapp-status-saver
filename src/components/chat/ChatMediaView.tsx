@@ -43,23 +43,24 @@ export const ChatMediaView: React.FC<ChatMediaViewProps> = ({
 
   // Image Photo Preview
   if (mediaType === 'image' || text.includes('Photo') || text.includes('📷')) {
-    const hasRealUri = !!mediaUri && mediaUri.startsWith('file://');
+    const validUri = mediaUri ? (mediaUri.startsWith('file://') ? mediaUri : `file://${mediaUri}`) : null;
+    const hasRealUri = !!validUri;
 
     return (
       <View style={styles.mediaContainer}>
         <TouchableOpacity
           activeOpacity={0.85}
           onPress={() => {
-            if (hasRealUri && mediaUri) {
+            if (hasRealUri && validUri) {
               setFullscreenVisible(true);
-              onOpenMedia?.(mediaUri, 'image');
+              onOpenMedia?.(validUri, 'image');
             }
           }}
           style={styles.imageCard}
         >
-          {hasRealUri && mediaUri ? (
+          {hasRealUri && validUri ? (
             <Image
-              source={{ uri: mediaUri }}
+              source={{ uri: validUri }}
               style={styles.imageThumbnail}
               resizeMode="cover"
             />
@@ -81,7 +82,7 @@ export const ChatMediaView: React.FC<ChatMediaViewProps> = ({
         </TouchableOpacity>
 
         {/* Fullscreen Photo Viewer Modal */}
-        {hasRealUri && mediaUri && (
+        {hasRealUri && validUri && (
           <Modal
             visible={fullscreenVisible}
             transparent={false}
@@ -102,7 +103,7 @@ export const ChatMediaView: React.FC<ChatMediaViewProps> = ({
 
               <View style={styles.fullscreenImageWrapper}>
                 <Image
-                  source={{ uri: mediaUri }}
+                  source={{ uri: validUri }}
                   style={styles.fullscreenImage}
                   resizeMode="contain"
                 />

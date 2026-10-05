@@ -86,11 +86,17 @@ class WhatsAppNotificationListenerService : NotificationListenerService() {
                 var mediaSize = 0L
 
                 if (mediaType != null) {
-                    val mediaInfo = WhatsAppMediaRecoveryHelper.findAndCacheRecentMedia(
-                        applicationContext,
-                        mediaType,
-                        isBusiness
-                    )
+                    var mediaInfo: RecoveredMediaInfo? = null
+                    if (mediaType == "image") {
+                        mediaInfo = WhatsAppMediaRecoveryHelper.extractBitmapFromExtras(applicationContext, extras)
+                    }
+                    if (mediaInfo == null) {
+                        mediaInfo = WhatsAppMediaRecoveryHelper.findAndCacheRecentMedia(
+                            applicationContext,
+                            mediaType,
+                            isBusiness
+                        )
+                    }
                     if (mediaInfo != null) {
                         mediaUri = mediaInfo.cachedFilePath
                         mediaDuration = mediaInfo.durationSeconds

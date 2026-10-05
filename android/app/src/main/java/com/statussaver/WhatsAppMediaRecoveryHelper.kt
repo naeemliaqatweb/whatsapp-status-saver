@@ -1,7 +1,12 @@
 package com.statussaver
 
+import android.app.Notification
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.drawable.Icon
 import android.media.MediaMetadataRetriever
+import android.os.Build
+import android.os.Bundle
 import android.os.Environment
 import android.util.Log
 import java.io.File
@@ -28,10 +33,64 @@ object WhatsAppMediaRecoveryHelper {
         return when {
             lower.contains("voice message") || lower.startsWith("🎤") || lower.contains("ptt-") -> "voice"
             lower.contains("audio") || lower.startsWith("🎵") -> "audio"
-            lower.contains("photo") || lower.startsWith("📷") || lower.contains("image") -> "image"
+            lower.contains("photo") || lower.startsWith("📷") || lower.contains("image") || lower.contains("picture") -> "image"
             lower.contains("video") || lower.startsWith("🎥") || lower.contains("gif") -> "video"
             else -> null
         }
+    }
+
+    /**
+     * Extract bitmap directly from notification extras if available (e.g. Photo notifications)
+     */
+    fun extractBitmapFromExtras(context: Context, extras: Bundle): RecoveredMediaInfo? {
+        try {
+            var bitmap: Bitmap? = null
+
+            // Try EXTRA_PICTURE first
+            if (extras.containsKey(Notification.EXTRA_PICTURE)) {
+                val obj = extras.get(Notification.EXTRA_PICTURE)
+                if (obj is Bitmap) {
+                    bitmap = obj
+                }
+            }
+
+            // Try EXTRA_LARGE_ICON_BIG or EXTRA_LARGE_ICON
+            if (bitmap == null && extras.containsKey(Notification.EXTRA_LARGE_ICON_BIG)) {
+                val obj = extras.get(Notification.EXTRA_LARGE_ICON_BIG)
+                if (obj is Bitmap) {
+                    bitmap = obj
+                }
+            }
+
+            if (bitmap == null && extras.containsKey(Notification.EXTRA_LARGE_ICON)) {
+                val obj = extras.get(Notification.EXTRA_LARGE_ICON)
+                if (obj is Bitmap) {
+                    bitmap = obj
+                }
+            }
+
+            if (bitmap != null) {
+                val destDir = File(context.getExternalFilesDir(null) ?: context.filesDir, "recovered_media")
+                if (!destDir.exists()) destDir.mkdirs()
+
+                val destFile = File(destDir, "img_${System.currentTimeMillis()}.jpg")
+                FileOutputStream(destFile).use { out ->
+                    bitmap.compress(Bitmap.CompressFormat.JPEG, 95, out)
+                    out.flush()
+                }
+
+                Log.d(TAG, "Saved image bitmap from notification: ${destFile.absolutePath}")
+                return RecoveredMediaInfo(
+                    mediaType = "image",
+                    cachedFilePath = "file://${destFile.absolutePath}",
+                    durationSeconds = 0,
+                    fileSizeBytes = destFile.length()
+                )
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error extracting bitmap from extras: ${e.message}")
+        }
+        return null
     }
 
     /**
@@ -51,12 +110,11 @@ object WhatsAppMediaRecoveryHelper {
             for (dir in sourceDirs) {
                 if (!dir.exists() || !dir.isDirectory) continue
                 
-                // Collect files (including subdirectories for Voice Notes e.g. 2024xx, 2025xx)
+                // Collect files (including subdirectories for Voice Notes or Images e.g. Sent, Private, etc.)
                 val files = getAllMediaFiles(dir, mediaType)
                 for (file in files) {
                     val lastMod = file.lastModified()
                     if (lastMod >= cutoffTime && lastMod > latestModTime && file.length() > 0) {
-                        // Skip .nomedia and temp files
                         if (!file.name.startsWith(".") && !file.name.endsWith(".tmp")) {
                             latestModTime = lastMod
                             latestFile = file
@@ -68,7 +126,6 @@ object WhatsAppMediaRecoveryHelper {
             if (latestFile != null && latestFile.exists()) {
                 Log.d(TAG, "Found recent $mediaType file: ${latestFile.absolutePath} (size=${latestFile.length()} bytes)")
                 
-                // Copy to persistent internal/external storage
                 val destDir = File(context.getExternalFilesDir(null) ?: context.filesDir, "recovered_media")
                 if (!destDir.exists()) {
                     destDir.mkdirs()
@@ -97,6 +154,87 @@ object WhatsAppMediaRecoveryHelper {
         return null
     }
 
+    /**
+     * Fallback to retrieve any available real voice note on the device
+     */
+    fun getAnyAvailableVoiceNote(context: Context): RecoveredMediaInfo? {
+        try {
+            val sourceDirs = getSourceDirectories("voice", false) + getSourceDirectories("voice", true)
+            var latestFile: File? = null
+            var latestModTime = 0L
+
+            for (dir in sourceDirs) {
+                if (!dir.exists() || !dir.isDirectory) continue
+                val files = getAllMediaFiles(dir, "voice")
+                for (file in files) {
+                    if (file.lastModified() > latestModTime && file.length() > 0 && !file.name.startsWith(".")) {
+                        latestModTime = file.lastModified()
+                        latestFile = file
+                    }
+                }
+            }
+
+            if (latestFile != null && latestFile.exists()) {
+                val destDir = File(context.getExternalFilesDir(null) ?: context.filesDir, "recovered_media")
+                if (!destDir.exists()) destDir.mkdirs()
+                val destFile = File(destDir, "cached_${latestFile.name}")
+                if (!destFile.exists() || destFile.length() == 0L) {
+                    copyFile(latestFile, destFile)
+                }
+                val duration = extractMediaDuration(destFile)
+                return RecoveredMediaInfo(
+                    mediaType = "voice",
+                    cachedFilePath = "file://${destFile.absolutePath}",
+                    durationSeconds = if (duration > 0) duration else 8,
+                    fileSizeBytes = destFile.length()
+                )
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error finding fallback voice note: ${e.message}")
+        }
+        return null
+    }
+
+    /**
+     * Fallback to retrieve any available real WhatsApp image on the device
+     */
+    fun getAnyAvailableImage(context: Context): RecoveredMediaInfo? {
+        try {
+            val sourceDirs = getSourceDirectories("image", false) + getSourceDirectories("image", true)
+            var latestFile: File? = null
+            var latestModTime = 0L
+
+            for (dir in sourceDirs) {
+                if (!dir.exists() || !dir.isDirectory) continue
+                val files = getAllMediaFiles(dir, "image")
+                for (file in files) {
+                    if (file.lastModified() > latestModTime && file.length() > 0 && !file.name.startsWith(".")) {
+                        latestModTime = file.lastModified()
+                        latestFile = file
+                    }
+                }
+            }
+
+            if (latestFile != null && latestFile.exists()) {
+                val destDir = File(context.getExternalFilesDir(null) ?: context.filesDir, "recovered_media")
+                if (!destDir.exists()) destDir.mkdirs()
+                val destFile = File(destDir, "cached_${latestFile.name}")
+                if (!destFile.exists() || destFile.length() == 0L) {
+                    copyFile(latestFile, destFile)
+                }
+                return RecoveredMediaInfo(
+                    mediaType = "image",
+                    cachedFilePath = "file://${destFile.absolutePath}",
+                    durationSeconds = 0,
+                    fileSizeBytes = destFile.length()
+                )
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error finding fallback image: ${e.message}")
+        }
+        return null
+    }
+
     private fun getSourceDirectories(mediaType: String, isBusiness: Boolean): List<File> {
         val dirs = mutableListOf<File>()
         val storage = Environment.getExternalStorageDirectory()
@@ -112,8 +250,8 @@ object WhatsAppMediaRecoveryHelper {
         val subFolderNames = when (mediaType) {
             "voice" -> listOf("$folderName Voice Notes", "$folderName Audio")
             "audio" -> listOf("$folderName Audio", "$folderName Voice Notes")
-            "image" -> listOf("$folderName Images")
-            "video" -> listOf("$folderName Video")
+            "image" -> listOf("$folderName Images", "$folderName Images/Sent", "$folderName Images/Private")
+            "video" -> listOf("$folderName Video", "$folderName Video/Sent", "$folderName Video/Private")
             else -> emptyList()
         }
 
@@ -131,7 +269,6 @@ object WhatsAppMediaRecoveryHelper {
 
         for (file in list) {
             if (file.isDirectory) {
-                // Voice notes are partitioned into subdirectories like "202440", "202610", etc.
                 result.addAll(getAllMediaFiles(file, mediaType))
             } else if (file.isFile) {
                 val name = file.name.lowercase()
@@ -176,43 +313,5 @@ object WhatsAppMediaRecoveryHelper {
                 retriever.release()
             } catch (e: Exception) {}
         }
-    }
-
-    fun getAnyAvailableVoiceNote(context: Context): RecoveredMediaInfo? {
-        try {
-            val sourceDirs = getSourceDirectories("voice", false) + getSourceDirectories("voice", true)
-            var latestFile: File? = null
-            var latestModTime = 0L
-
-            for (dir in sourceDirs) {
-                if (!dir.exists() || !dir.isDirectory) continue
-                val files = getAllMediaFiles(dir, "voice")
-                for (file in files) {
-                    if (file.lastModified() > latestModTime && file.length() > 0 && !file.name.startsWith(".")) {
-                        latestModTime = file.lastModified()
-                        latestFile = file
-                    }
-                }
-            }
-
-            if (latestFile != null && latestFile.exists()) {
-                val destDir = File(context.getExternalFilesDir(null) ?: context.filesDir, "recovered_media")
-                if (!destDir.exists()) destDir.mkdirs()
-                val destFile = File(destDir, "cached_${latestFile.name}")
-                if (!destFile.exists() || destFile.length() == 0L) {
-                    copyFile(latestFile, destFile)
-                }
-                val duration = extractMediaDuration(destFile)
-                return RecoveredMediaInfo(
-                    mediaType = "voice",
-                    cachedFilePath = "file://${destFile.absolutePath}",
-                    durationSeconds = if (duration > 0) duration else 8,
-                    fileSizeBytes = destFile.length()
-                )
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error finding fallback voice note: ${e.message}")
-        }
-        return null
     }
 }

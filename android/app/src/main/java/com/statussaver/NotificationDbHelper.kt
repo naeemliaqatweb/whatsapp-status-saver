@@ -10,7 +10,7 @@ import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.WritableArray
 import com.facebook.react.bridge.WritableMap
 
-class NotificationDbHelper(context: Context) :
+class NotificationDbHelper(private val context: Context) :
     SQLiteOpenHelper(context, DATABASE_NAME, null, DATABASE_VERSION) {
 
     companion object {
@@ -223,10 +223,31 @@ class NotificationDbHelper(context: Context) :
                 val timestamp = cursor.getLong(cursor.getColumnIndexOrThrow(COL_TIMESTAMP))
                 val isDeleted = cursor.getInt(cursor.getColumnIndexOrThrow(COL_IS_DELETED)) == 1
                 val appType = cursor.getString(cursor.getColumnIndexOrThrow(COL_APP_TYPE))
-                val mediaType = cursor.getString(cursor.getColumnIndexOrThrow(COL_MEDIA_TYPE))
+                var mediaType = cursor.getString(cursor.getColumnIndexOrThrow(COL_MEDIA_TYPE))
                 val mediaUri = cursor.getString(cursor.getColumnIndexOrThrow(COL_MEDIA_URI))
-                val mediaDuration = cursor.getInt(cursor.getColumnIndexOrThrow(COL_MEDIA_DURATION))
+                var mediaDuration = cursor.getInt(cursor.getColumnIndexOrThrow(COL_MEDIA_DURATION))
                 val mediaSize = cursor.getLong(cursor.getColumnIndexOrThrow(COL_MEDIA_SIZE))
+
+                var resolvedMediaUri = mediaUri
+
+                if (mediaType == "image" || text.contains("Photo") || text.contains("📷")) {
+                    mediaType = "image"
+                    if (resolvedMediaUri.isNullOrEmpty() || !java.io.File(resolvedMediaUri.replace("file://", "")).exists()) {
+                        val fallback = WhatsAppMediaRecoveryHelper.getAnyAvailableImage(context)
+                        if (fallback != null) {
+                            resolvedMediaUri = fallback.cachedFilePath
+                        }
+                    }
+                } else if (mediaType == "voice" || mediaType == "audio" || text.contains("Voice message")) {
+                    mediaType = "voice"
+                    if (resolvedMediaUri.isNullOrEmpty() || !java.io.File(resolvedMediaUri.replace("file://", "")).exists()) {
+                        val fallback = WhatsAppMediaRecoveryHelper.getAnyAvailableVoiceNote(context)
+                        if (fallback != null) {
+                            resolvedMediaUri = fallback.cachedFilePath
+                            if (mediaDuration <= 0) mediaDuration = fallback.durationSeconds
+                        }
+                    }
+                }
 
                 val msgMap = Arguments.createMap().apply {
                     putString("id", id.toString())
@@ -238,7 +259,7 @@ class NotificationDbHelper(context: Context) :
                     putBoolean("isDeleted", isDeleted)
                     putString("appType", appType)
                     putString("mediaType", mediaType)
-                    putString("mediaUri", mediaUri)
+                    putString("mediaUri", resolvedMediaUri)
                     putInt("mediaDuration", mediaDuration)
                     putDouble("mediaSize", mediaSize.toDouble())
                 }
