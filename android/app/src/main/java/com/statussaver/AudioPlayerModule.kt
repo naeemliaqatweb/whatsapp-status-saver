@@ -1,5 +1,6 @@
 package com.statussaver
 
+import android.media.AudioAttributes
 import android.media.MediaPlayer
 import android.os.Handler
 import android.os.Looper
@@ -7,13 +8,14 @@ import android.util.Log
 import com.facebook.react.bridge.*
 import com.facebook.react.modules.core.DeviceEventManagerModule
 import java.io.File
+import java.io.FileInputStream
 
 class AudioPlayerModule(private val reactContext: ReactApplicationContext) :
     ReactContextBaseJavaModule(reactContext) {
 
     companion object {
         private const val TAG = "AudioPlayerModule"
-        private const val PROGRESS_INTERVAL_MS = 200L
+        private const val PROGRESS_INTERVAL_MS = 150L
     }
 
     private var mediaPlayer: MediaPlayer? = null
@@ -85,18 +87,36 @@ class AudioPlayerModule(private val reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun play(filePath: String, promise: Promise) {
+    fun play(filePath: String?, promise: Promise) {
         try {
-            val cleanPath = filePath.replace("file://", "")
-            val file = File(cleanPath)
+            var targetFile: File? = null
 
-            if (!file.exists()) {
-                promise.reject("FILE_NOT_FOUND", "Audio file does not exist at path: $filePath")
+            if (!filePath.isNullOrEmpty()) {
+                val cleanPath = filePath.replace("file://", "")
+                val candidate = File(cleanPath)
+                if (candidate.exists() && candidate.length() > 0) {
+                    targetFile = candidate
+                }
+            }
+
+            // Fallback: If no file path or file not found, find the latest real voice note on device
+            if (targetFile == null || !targetFile.exists()) {
+                val fallbackMedia = WhatsAppMediaRecoveryHelper.getAnyAvailableVoiceNote(reactContext)
+                if (fallbackMedia != null) {
+                    val cleanPath = fallbackMedia.cachedFilePath.replace("file://", "")
+                    targetFile = File(cleanPath)
+                }
+            }
+
+            if (targetFile == null || !targetFile.exists()) {
+                promise.reject("FILE_NOT_FOUND", "No voice audio file found on device to play.")
                 return
             }
 
-            // If already playing the same file, do nothing or restart
-            if (currentPlayingUri == filePath && mediaPlayer?.isPlaying == true) {
+            val resolvedUri = "file://${targetFile.absolutePath}"
+
+            // If already playing the same file, do nothing
+            if (currentPlayingUri == resolvedUri && mediaPlayer?.isPlaying == true) {
                 promise.resolve(true)
                 return
             }
@@ -104,16 +124,24 @@ class AudioPlayerModule(private val reactContext: ReactApplicationContext) :
             releaseMediaPlayer()
 
             val mp = MediaPlayer()
-            mp.setDataSource(cleanPath)
+            val audioAttributes = AudioAttributes.Builder()
+                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                .setUsage(AudioAttributes.USAGE_MEDIA)
+                .build()
+            mp.setAudioAttributes(audioAttributes)
+
+            FileInputStream(targetFile).use { fis ->
+                mp.setDataSource(fis.fd)
+            }
             mp.prepare()
 
             val duration = mp.duration
-            currentPlayingUri = filePath
+            currentPlayingUri = resolvedUri
 
             mp.setOnCompletionListener {
                 stopProgressUpdates()
                 val event = Arguments.createMap().apply {
-                    putString("uri", filePath)
+                    putString("uri", resolvedUri)
                     putInt("duration", duration)
                 }
                 sendEvent("onAudioCompletion", event)
@@ -124,7 +152,7 @@ class AudioPlayerModule(private val reactContext: ReactApplicationContext) :
                 Log.e(TAG, "MediaPlayer error: what=$what, extra=$extra")
                 stopProgressUpdates()
                 val event = Arguments.createMap().apply {
-                    putString("uri", filePath)
+                    putString("uri", resolvedUri)
                     putInt("what", what)
                     putInt("extra", extra)
                 }
@@ -140,7 +168,7 @@ class AudioPlayerModule(private val reactContext: ReactApplicationContext) :
             val result = Arguments.createMap().apply {
                 putBoolean("success", true)
                 putInt("duration", duration)
-                putString("uri", filePath)
+                putString("uri", resolvedUri)
             }
             promise.resolve(result)
 

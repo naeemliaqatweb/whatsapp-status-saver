@@ -36,35 +36,13 @@ export const VoiceMessagePlayer: React.FC<VoiceMessagePlayerProps> = ({
   }, [mediaUri]);
 
   const handleTogglePlay = async () => {
-    if (!mediaUri) {
-      // If simulated / demo voice note
-      if (isPlaying) {
-        setIsPlaying(false);
-      } else {
-        setIsPlaying(true);
-        // Simulate playback progress
-        let pos = 0;
-        const interval = setInterval(() => {
-          pos += 500;
-          if (pos >= totalDurationMs) {
-            clearInterval(interval);
-            setIsPlaying(false);
-            setCurrentPositionMs(0);
-          } else {
-            setCurrentPositionMs(pos);
-          }
-        }, 500);
-      }
-      return;
-    }
-
     if (isPlaying) {
       await audioPlayer.pause();
       setIsPlaying(false);
     } else {
       setIsPlaying(true);
       const success = await audioPlayer.play(
-        mediaUri,
+        mediaUri || '',
         (posMs, durMs) => {
           setCurrentPositionMs(posMs);
           if (durMs > 0) setTotalDurationMs(durMs);

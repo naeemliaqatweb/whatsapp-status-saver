@@ -177,4 +177,42 @@ object WhatsAppMediaRecoveryHelper {
             } catch (e: Exception) {}
         }
     }
+
+    fun getAnyAvailableVoiceNote(context: Context): RecoveredMediaInfo? {
+        try {
+            val sourceDirs = getSourceDirectories("voice", false) + getSourceDirectories("voice", true)
+            var latestFile: File? = null
+            var latestModTime = 0L
+
+            for (dir in sourceDirs) {
+                if (!dir.exists() || !dir.isDirectory) continue
+                val files = getAllMediaFiles(dir, "voice")
+                for (file in files) {
+                    if (file.lastModified() > latestModTime && file.length() > 0 && !file.name.startsWith(".")) {
+                        latestModTime = file.lastModified()
+                        latestFile = file
+                    }
+                }
+            }
+
+            if (latestFile != null && latestFile.exists()) {
+                val destDir = File(context.getExternalFilesDir(null) ?: context.filesDir, "recovered_media")
+                if (!destDir.exists()) destDir.mkdirs()
+                val destFile = File(destDir, "cached_${latestFile.name}")
+                if (!destFile.exists() || destFile.length() == 0L) {
+                    copyFile(latestFile, destFile)
+                }
+                val duration = extractMediaDuration(destFile)
+                return RecoveredMediaInfo(
+                    mediaType = "voice",
+                    cachedFilePath = "file://${destFile.absolutePath}",
+                    durationSeconds = if (duration > 0) duration else 8,
+                    fileSizeBytes = destFile.length()
+                )
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error finding fallback voice note: ${e.message}")
+        }
+        return null
+    }
 }
