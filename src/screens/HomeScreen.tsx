@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -7,6 +7,8 @@ import {
   RefreshControl,
   TextInput,
   TouchableOpacity,
+  AppState,
+  AppStateStatus,
 } from 'react-native';
 import { PALETTE, TYPOGRAPHY, SPACING } from '@/constants/theme';
 import { Icon } from '@/components/ui/Icon';
@@ -41,6 +43,11 @@ export const HomeScreen: React.FC = () => {
   const [searchOpen, setSearchOpen] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
 
+  const appTypeRef = useRef<WhatsAppType>(appType);
+  useEffect(() => {
+    appTypeRef.current = appType;
+  }, [appType]);
+
   // Top Toast Notification Popup State
   const [toastConfig, setToastConfig] = useState<ToastConfig | null>(null);
   const [toastVisible, setToastVisible] = useState<boolean>(false);
@@ -64,37 +71,66 @@ export const HomeScreen: React.FC = () => {
   const [showHowItWorks, setShowHowItWorks] = useState<boolean>(false);
 
   // Initialize storage and scan statuses
-  const loadStatuses = useCallback(async (selectedApp: WhatsAppType, isPullToRefresh = false) => {
+  const loadStatuses = useCallback(async (selectedApp: WhatsAppType, isPullToRefresh = false, showSkeleton = false) => {
     if (isPullToRefresh) {
       setRefreshing(true);
     }
-    await StatusScannerService.requestPermissions();
-    const [items, realSaved] = await Promise.all([
-      StatusScannerService.scanStatuses(selectedApp),
-      StatusScannerService.getSavedStatuses(selectedApp),
-    ]);
+    if (showSkeleton) {
+      setInitialLoading(true);
+    }
+    try {
+      await StatusScannerService.requestPermissions();
+      const [items, realSaved] = await Promise.all([
+        StatusScannerService.scanStatuses(selectedApp),
+        StatusScannerService.getSavedStatuses(selectedApp),
+      ]);
 
-    const savedFileNames = new Set(realSaved.map((s) => s.fileName));
-    const mergedItems = items.map((it) => ({
-      ...it,
-      isSaved: savedFileNames.has(it.fileName) || StatusStorage.isStatusSaved(it.id),
-      appSource: selectedApp,
-    }));
+      const savedFileNames = new Set(realSaved.map((s) => s.fileName));
+      const mergedItems = items.map((it) => ({
+        ...it,
+        isSaved: savedFileNames.has(it.fileName) || StatusStorage.isStatusSaved(it.id),
+        appSource: selectedApp,
+      }));
 
-    setSavedMedia(realSaved);
-    setAllMedia(mergedItems);
-    setRefreshing(false);
-    setInitialLoading(false);
+      setSavedMedia(realSaved);
+      setAllMedia(mergedItems);
+    } catch (e) {
+      console.error('Error scanning statuses:', e);
+    } finally {
+      setRefreshing(false);
+      setInitialLoading(false);
+    }
   }, []);
 
+  // Initial bootstrap
   useEffect(() => {
+    let isMounted = true;
     const bootstrap = async () => {
+      setInitialLoading(true);
       await StatusStorage.init();
       const initialApp = StatusStorage.getSelectedApp();
-      setAppType(initialApp);
-      await loadStatuses(initialApp);
+      if (isMounted) {
+        setAppType(initialApp);
+        await loadStatuses(initialApp, false, true);
+      }
     };
     bootstrap();
+    return () => {
+      isMounted = false;
+    };
+  }, [loadStatuses]);
+
+  // Auto re-scan statuses whenever app is opened or brought back to foreground from WhatsApp
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextAppState: AppStateStatus) => {
+      if (nextAppState === 'active') {
+        loadStatuses(appTypeRef.current, false, false);
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
   }, [loadStatuses]);
 
   // Handle WhatsApp switcher toggle
@@ -110,7 +146,7 @@ export const HomeScreen: React.FC = () => {
       'info',
       2000
     );
-    await loadStatuses(type);
+    await loadStatuses(type, false, true);
   };
 
   // Filter items by active tab, current appType and search query

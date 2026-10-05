@@ -6,12 +6,44 @@ const { StatusScannerModule } = NativeModules;
 
 export class StatusScannerService {
   /**
+   * Quick check if storage permissions are already granted
+   */
+  public static async hasPermissions(): Promise<boolean> {
+    if (Platform.OS !== 'android') return true;
+    try {
+      if (Platform.Version >= 33) {
+        const hasImg = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES);
+        const hasVid = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.READ_MEDIA_VIDEO);
+        const hasManage = StatusScannerModule?.hasManageStoragePermission
+          ? await StatusScannerModule.hasManageStoragePermission()
+          : true;
+        return (hasImg && hasVid) || hasManage;
+      } else if (Platform.Version >= 30) {
+        const hasManage = StatusScannerModule?.hasManageStoragePermission
+          ? await StatusScannerModule.hasManageStoragePermission()
+          : true;
+        const hasRead = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE);
+        return hasManage || hasRead;
+      } else {
+        return await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE);
+      }
+    } catch {
+      return false;
+    }
+  }
+
+  /**
    * Request necessary Android storage permissions
    */
   public static async requestPermissions(): Promise<boolean> {
     if (Platform.OS !== 'android') return true;
 
     try {
+      const alreadyGranted = await this.hasPermissions();
+      if (alreadyGranted) {
+        return true;
+      }
+
       if (Platform.Version >= 33) {
         const statuses = await PermissionsAndroid.requestMultiple([
           PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES,
@@ -76,7 +108,10 @@ export class StatusScannerService {
     }
 
     try {
-      await this.requestPermissions();
+      const granted = await this.hasPermissions();
+      if (!granted) {
+        await this.requestPermissions();
+      }
       const rawStatuses = await StatusScannerModule.scanStatuses(appType);
       
       if (!rawStatuses || !Array.isArray(rawStatuses)) {
