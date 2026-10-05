@@ -12,6 +12,8 @@ import {
   Alert,
 } from 'react-native';
 import { PALETTE, TYPOGRAPHY, SPACING } from '@/constants/theme';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Platform } from 'react-native';
 import { Icon } from '@/components/ui/Icon';
 import { RecoveredChat, RecoveredMessage } from '@/types/status';
 import { NotificationRecoveryService } from '@/services/notificationRecoveryService';
@@ -29,8 +31,14 @@ export const ChatDetailModal: React.FC<ChatDetailModalProps> = ({
   onClose,
   onDeleteChat,
 }) => {
+  const insets = useSafeAreaInsets();
   const [messages, setMessages] = useState<RecoveredMessage[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+
+  const safeTopPadding = Math.max(
+    insets.top,
+    Platform.OS === 'android' ? (StatusBar.currentHeight || 28) : 20
+  );
 
   useEffect(() => {
     if (visible && chat) {
@@ -101,7 +109,7 @@ export const ChatDetailModal: React.FC<ChatDetailModalProps> = ({
         <StatusBar backgroundColor="#075E54" barStyle="light-content" />
 
         {/* WhatsApp Chat Room Top Header */}
-        <View style={styles.header}>
+        <View style={[styles.header, { paddingTop: safeTopPadding + 6 }]}>
           <TouchableOpacity
             activeOpacity={0.7}
             onPress={onClose}
